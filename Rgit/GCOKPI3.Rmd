@@ -1,0 +1,425 @@
+---
+title: "GCO China Org. Effectiveness"
+author: 
+output: 
+  flexdashboard::flex_dashboard:
+        theme: flatly #flatly 绿色 journal 粉红色 cerulean 深蓝色
+        source_code: 
+        output: html_document
+        logo: logo.png
+        #vertical_layout: scroll
+        storyboard: true
+---
+```{r setup, include=FALSE}
+library(plotly)
+library(ggthemes)
+library(flexdashboard)
+library(shiny)
+library(scales)
+library(dplyr)
+library(tidyr)
+library(ggmosaic)
+library(RColorBrewer)
+mytheme<-theme_bw(base_size = 10)+theme(title = element_text(size=rel(1.2),face = "bold"),
+                          panel.grid.major=element_line(linetype="dashed"),
+                          panel.grid.minor=element_blank(),
+                          plot.title=element_text(),
+                          legend.text=element_text(size=rel(1)),
+                          legend.key=element_blank(),
+                          axis.text=element_text(size=rel(1)),
+                          axis.line = element_line(linetype = 1),
+                          strip.text=element_text(size=rel(1.1),face = "bold"),
+                          strip.background=element_rect(linetype = "solid"),
+                          panel.background = element_blank(),
+                          plot.background = element_blank(),
+                          legend.background = element_blank(),
+                          axis.title = element_text(),
+                          plot.margin = unit(c(1, 1, 1, 1), "lines"))
+
+mytheme_wsj<-theme_wsj(base_size = 10,color = "black")+
+             theme(axis.text=element_text(face="plain",color="black"),
+                   title = element_text(size = rel(1.2),face = "bold"),
+                   axis.title = element_text())
+grid_xblank<-theme(panel.grid.major.x = element_blank(),panel.grid.minor.x = element_blank() )
+grid_yblank<-theme(panel.grid.major.y = element_blank(),panel.grid.minor.y = element_blank() )
+y_ticks_blank<-theme(axis.ticks.y = element_blank())
+y_ticks_black<-theme(axis.ticks.y = element_line(colour = "black"))
+plot_rect_blank<-theme(panel.border = element_rect(fill=NA,linetype = 0))
+
+cols_3<-brewer.pal(3,"BrBG")
+cols_brown4<-brewer.pal(8,"BrBG")[1:4]
+cols_green2<-brewer.pal(3,"BuGn")[2:3]
+cols_2<-cols_3[c(1,3)]
+Myfill_5<-scale_fill_manual(values=c("#0070C0","#FFC000","#00B050","#7030A0","#B5B5B5"))
+x_text_blank<-theme(axis.text.x=element_blank())
+y_text_blank<-theme(axis.text.y=element_blank())
+t <- list(
+  family = "sans serif",
+  color = 'grey')
+##========================================================================
+library(readxl)
+WB<-file.path('GCOdata1.xlsx')#列出wd里的嵌套层级，如果没有嵌套直接文件名即可
+Regular<-read_excel(WB,"Regular")
+Project<-read_excel(WB,"project")
+Regular$WorkType[Regular$WorkType=="Regular"]<-"Planned"
+```
+
+GCO Overview
+=======================================================================
+
+Column {data-width=300}
+-----------------------------------------------------------------------
+### Work distribution: Regular work vs Project
+```{r}
+##整合project +regular
+Regular[is.na(Regular)]<-0
+Project[is.na(Project)]<-0
+TeamReg=Regular%>%
+        dplyr::group_by(Team)%>%
+        dplyr::summarise(RegularWorkload=sum(Deliveryworkload))
+
+Teamwork=Project%>%subset(Team!=0)%>%
+        dplyr::group_by(Team)%>%
+        dplyr::summarise(ProjectWorkload=sum(Deliveryworkload))%>%
+        dplyr::full_join(.,TeamReg,by="Team")%>%
+        gather(key=WorkType,value=workload,ProjectWorkload,RegularWorkload)
+
+p<-ggplot(Teamwork)+
+        geom_mosaic(aes(weight=workload,x=product(Team),fill=factor(WorkType)),alpha=1)+
+        theme_minimal()+grid_xblank+grid_yblank+y_text_blank+
+        labs(x="",y="standarized workload (hr)%",fill="")+scale_fill_manual(values = cols_2)
+p1<-p+geom_text(data = ggplot_build(p)$data[[1]], 
+                aes(x = (xmin+xmax)/2, y = (ymin+ymax)/2, label=percent(ymax-ymin)),size=3)
+ggplotly(p1)%>%layout(legend = list(x = 0.1, y = 100,orientation = 'h'),font=t)
+```
+
+### About graph{data-height=400}
+
+Top figure:
+Standarized workload(hr) distribution between Regular work vs Project work  by team, the box width represent the absolute value of workload(hr) by team.
+
+Middle figure:
+Standarized workload(hr) distribution in Regular work: Planned vs ad-hoc
+Standarized workload(hr) distribution in Project work: Project Type vs Project Width
+
+Right figure:
+Workload distribution among worktype in each employee. The employee are arranged workload sum.
+
+Column {data-width=300}
+-----------------------------------------------------------------------
+### Regular work: Planned vs Ad-hoc 
+
+```{r}
+##整合regular
+TeamReg2=Regular%>%
+        dplyr::group_by(Team,WorkType)%>%
+        dplyr::summarise(RegularWorkload=sum(Deliveryworkload),employe=n_distinct(Name))
+
+##Regular work的图表
+p<-ggplot(TeamReg2)+
+        geom_mosaic(aes(weight=RegularWorkload,x=product(Team),
+                        fill=factor(WorkType)),alpha=1)+
+        theme_minimal()+grid_xblank+grid_yblank+y_text_blank+
+        labs(x="",y="standarized workload (hr)%",fill="")+
+        scale_fill_manual(values = rev(cols_green2))
+p1<-p+geom_text(data = ggplot_build(p)$data[[1]], 
+                aes(x = (xmin+xmax)/2, y = (ymin+ymax)/2, label=percent(ymax-ymin)),size=3)
+ggplotly(p1)%>%layout(legend = list(x = 0.1, y = 100,orientation = 'h'),font=t)
+```
+
+###Project: Project Type & Project impact width  {data-height=400}
+
+```{r}
+##整合Project
+TeamPro2=Project%>%subset(Team!=0)%>%
+        dplyr::group_by(Team,Projectwidth,ProjectType)%>%
+        dplyr::summarise(ProjectWorkload=sum(Deliveryworkload),employe=n_distinct(Name))
+p<-ggplot(TeamPro2)+
+        geom_mosaic(aes(weight=ProjectWorkload,x=product(ProjectType),                        fill=factor(Projectwidth),conds=product(Team)),
+                    color="#7F3B08",alpha=0.8)+
+        theme_minimal()+grid_xblank+grid_yblank+y_ticks_black+x_text_blank+
+        scale_y_continuous(breaks=c(0,0.05,0.5,0.92,1),label=c("","Platform","Biz model","Consulting","ProjectType"))+
+        labs(x="",y="",fill="",color="grey")+
+        scale_fill_manual(values=rev(cols_brown4))
+print(p)
+##把标识是0的去掉
+labvar<-ggplot_build(p)$data[[1]]$.wt
+labvar<-paste0(round(labvar,digits=2)*100,"%")
+labvar[labvar=="0%"]<-""
+
+p1<-p+geom_text(data = ggplot_build(p)$data[[1]], 
+                aes(x = (xmin+xmax)/2, y = (ymin+ymax)/2, label=labvar),
+                size=3)
+
+ggplotly(p1)%>%layout(legend = list(x = 0.1, y = 100,orientation = 'h'),font=t)
+```
+
+Column {data-width=400}
+-----------------------------------------------------------------------
+### Employee Work distribution: Regular work vs Project
+```{r}
+##热力图
+##整合project +regular by employee name
+TeamRegE=Regular%>%
+        dplyr::group_by(Team,Name,WorkType)%>%
+        dplyr::summarise(Workload=sum(Deliveryworkload))
+
+TeamworkE=Project%>%
+        dplyr::group_by(Team,Name,ProjectType)%>%
+        dplyr::summarise(Workload=sum(Deliveryworkload))
+
+colnames(TeamworkE)[3]<-"WorkType"
+TeamworkE<-dplyr::union(TeamRegE,TeamworkE)
+TeamworkE2=spread(TeamworkE,WorkType,Workload)
+TeamworkE2[is.na(TeamworkE2)==TRUE]<-0
+TeamworkE2<-data.frame(TeamworkE2)%>%subset(Team!=0)
+rownames(TeamworkE2)<-paste0(TeamworkE2$Team,TeamworkE2$Name)
+library(d3heatmap)
+TeamworkE3<-TeamworkE2[3:7]
+TeamworkE4<-TeamworkE3[c(1:10,30:40,60:75),]
+TeamworkE4<-TeamworkE4[,c(4,1,5,2,3)]
+d3heatmap(TeamworkE4, scale = "column",dendrogram = "row",xaxis_font_size = 12)
+```
+
+
+Project
+=====================================  
+
+Column {data-width=600}
+-----------------------------------------------------------------------
+
+### Project: workload (hr) 
+
+```{r}
+ProjectworkD=Project%>%
+        dplyr::group_by(Project,ProjectNo,Projectwidth)%>%
+        dplyr::summarise(Workload=sum(Deliveryworkload),n=n_distinct(Name))%>%
+        subset(Workload>0 & is.na(Workload)==FALSE)%>%
+        mutate(complexity=Workload/n)
+Avg.loadProject= mean(ProjectworkD$Workload)
+Avg.peoProject= mean(ProjectworkD$n)
+p<-ggplot(ProjectworkD,aes(x=reorder(ProjectNo,Workload,sum),y=Workload,
+                           fill=Projectwidth),alpha=0.8)+
+        labs(x=" ",y="workload",fill="")+mytheme+
+        theme(axis.text=element_text(size=rel(0.5)))+
+        geom_bar(stat="identity")+scale_fill_manual(values=rev(cols_brown4))+
+        geom_text(aes(label=Project),color=NA)+
+        theme(axis.text.x=element_text(angle = 45,hjust = 1,vjust = 0.5))+
+        #geom_text(aes(label=Workload),size=3)+
+        geom_hline(yintercept=Avg.loadProject,linetype="dashed")+
+                annotate("text",x=10,y=Avg.loadProject*1.1,label="GCO Avg")
+ggplotly(p)%>%layout(font=t,legend = list(x = 0.1, y = 100,orientation = 'h'))
+```
+
+### Project: employee invovled
+
+```{r}
+p<-ggplot(ProjectworkD,aes(x=reorder(ProjectNo,Workload,sum),y=n,
+                           fill=Projectwidth),alpha=0.8)+
+        labs(x=" ",y="invoved employee#",fill="")+mytheme+grid_xblank+grid_yblank+
+        geom_bar(stat="identity")+scale_fill_manual(values=rev(cols_brown4))+
+        #scale_y_continuous(breaks=seq(0,1000,20),minor_breaks = waiver())+
+        theme(axis.text.x=element_text(angle = 45,hjust = 1,vjust = 0.5))+
+        theme(axis.text=element_text(size=rel(0.5)))+
+        geom_text(aes(label=n),size=3)+
+        geom_text(aes(label=Project),color=NA)+
+        geom_hline(yintercept=Avg.peoProject,linetype="dashed")+
+                annotate("text",x=10,y=Avg.peoProject*1.05,label="GCO Avg")
+ggplotly(p)%>%layout(font=t,legend = list(x = 0.1, y = 100,orientation = 'h'))
+```
+
+Column {data-width=400}
+-----------------------------------------------------------------------
+###  Project distibution map: complexity vs people involved
+
+```{r}
+GCOAvg.complexity=sum(ProjectworkD$Workload)/sum(ProjectworkD$n)
+GCOAvg.employee=mean(ProjectworkD$n)
+#ProjectworkD2<-arrange(ProjectworkD,desc(Workload))[1:10,]
+p<-ggplot(ProjectworkD,aes(x=n,y=complexity,size=Workload))+
+        geom_point(aes(fill=Projectwidth),shape=21,color="#7F3B08",alpha=0.8)+
+        scale_fill_manual(values=rev(cols_brown4))+
+        scale_size_area()+
+        geom_hline(yintercept=GCOAvg.complexity,linetype=2,color="grey")+
+        geom_vline(xintercept=GCOAvg.employee,linetype=2,color="grey")+
+        mytheme+guides(size=FALSE)+
+        labs(x="Employee#",y="Avg working hr / employee",fill="")+
+        geom_text(aes(label=Project),size=3,color=NA)
+ p1<-p+annotate("text",y=max(ggplot_build(p)$data[[1]]$y)*0.95,
+                 x=mean(ggplot_build(p)$data[[1]]$x),label="Bubble size\n=workload#",fontface="italic")#+
+        #geom_text(aes(label=Project),alpha=0)
+ggplotly(p1)%>%layout(font=t,legend = list(x = 0.1, y = 100,orientation = 'h'))
+```
+
+Regular
+=====================================  
+
+Column {data-width=300}
+-----------------------------------------------------------------------
+
+### Regular: workload (hr) 
+
+```{r}
+RegularD=Regular%>%
+        dplyr::group_by(Team,ServiceItem,ItemNo)%>%
+        dplyr::summarise(Workload=sum(Deliveryworkload),n=n_distinct(Name))%>%
+        subset(Workload>0 & is.na(Workload)==FALSE)%>%
+        mutate(complexity=Workload/n)
+Avg.workladR=mean(RegularD$Workload)
+Avg.peoR=mean(RegularD$n)
+p<-ggplot(RegularD,aes(x=reorder(ItemNo,Workload,sum),y=Workload,
+                       fill=Team),alpha=1)+
+        labs(x=" ",y="workload (hr)",fill="")+mytheme+
+        geom_bar(stat="identity")+ 
+        scale_fill_manual(values = rev(cols_green2))+
+        geom_text(aes(label=Workload),size=3)+
+        geom_text(aes(label=ServiceItem),color=NA)+
+        geom_hline(yintercept=Avg.workladR,linetype=2,color="grey")+
+        annotate("text",x=6,y=Avg.workladR*1.05,label="GCO Avg")+
+        #scale_y_continuous(breaks=seq(0,1000,20),minor_breaks = waiver())+
+        theme(axis.text.x=element_text(angle = 45,hjust = 1,vjust = 0.5))
+ggplotly(p)%>%layout(font=t,legend = list(x = 0.1, y = 100,orientation = 'h'))
+```
+
+### Regular: employee# invovled 
+```{r}
+p<-ggplot(RegularD,aes(x=reorder(ItemNo,Workload,sum),y=n,
+                       fill=Team),alpha=1)+
+        labs(x=" ",y="invoved employee#",fill="")+mytheme+
+        geom_bar(stat="identity")+
+        scale_fill_manual(values = rev(cols_green2))+
+        geom_text(aes(label=n),size=3)+
+        geom_text(aes(label=ServiceItem),color=NA)+
+        geom_hline(yintercept=Avg.peoR,linetype=2,color="grey")+
+        annotate("text",x=6,y=Avg.peoR*1.05,label="GCO Avg")+
+        theme(axis.text.x=element_text(angle = 45,hjust = 1,vjust = 0.5))
+ggplotly(p)%>%layout(font=t,legend = list(x = 0.1, y = 100,orientation = 'h'))
+```
+
+Column {data-width=350}
+-----------------------------------------------------------------------
+###  Regular work distibution map: workload vs people involved
+
+```{r}
+GCOAvg.complexity=sum(RegularD$Workload)/sum(RegularD$n)
+GCOAvg.workload=mean(RegularD$Workload)
+p<-ggplot(RegularD,aes(x=Workload,y=complexity,size=n))+
+        geom_point(aes(fill=Team),shape=21,color="#006D2C",alpha=1)+
+        scale_fill_manual(values = rev(cols_green2))+
+        scale_size_area()+
+        geom_hline(yintercept=GCOAvg.complexity,linetype=2,color="grey")+
+        geom_vline(xintercept=GCOAvg.workload,linetype=2,color="grey")+
+        mytheme+guides(size=FALSE)+
+        labs(x="Total Workload",y="Avg working hr / employee",fill="")
+ p1<-p+annotate("text",y=max(ggplot_build(p)$data[[1]]$y),
+                 x=mean(ggplot_build(p)$data[[1]]$x),label="Bubble size \n=employee#",fontface="italic")+
+        geom_text(aes(label=ServiceItem),alpha=0)
+ggplotly(p1)%>%layout(font=t,legend = list(x = 0.1, y = 100,orientation = 'h'))
+```
+
+Column {data-width=350}
+-----------------------------------------------------------------------
+### Regular: Top regular work breakdown in CEE
+```{r}
+RegularTOP=Regular%>%
+        dplyr::group_by(ServiceItem,Team)%>%
+        dplyr::summarise(Workload=sum(Deliveryworkload))%>%
+        arrange(desc(Workload))
+
+SMSTOP<-RegularTOP%>%
+        subset(Team=="SMS")%>%
+        subset(Workload==max(Workload))
+CEETOP<-RegularTOP%>%
+        subset(Team=="CEE")%>%
+        subset(Workload==max(Workload))
+TrainingTOP<-RegularTOP%>%
+        subset(Team=="Training")%>%
+        subset(Workload==max(Workload))
+##ServiceItem==SMSTOP$ServiceItem| 之后把sms加上
+RegularTOP2=Regular%>%
+        subset(ServiceItem==CEETOP$ServiceItem|ServiceItem==TrainingTOP$ServiceItem)%>%
+        group_by(Team,ServiceItem,SubServiceitem)%>%
+        summarise(Workload=sum(Deliveryworkload))
+
+plot_ly(subset(RegularTOP2,Team=="CEE"), labels = ~SubServiceitem, values = ~Workload, type = 'pie',
+             textposition = 'inside',
+             textinfo = 'label+percent',
+             insidetextfont = list(color = '#FFFFFF'),
+             hoverinfo = 'text',
+             text = ~paste('hr', Workload),
+             marker = list(colors = colors,
+                           line = list(color = '#FFFFFF', width = 1)),
+             #The 'pull' attribute can also be used to create space between the sectors
+             showlegend = FALSE) %>%
+        layout(title = CEETOP$ServiceItem,xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+               yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+```
+
+### Regular: Top regular work breakdown in Training
+
+```{r}
+plot_ly(subset(RegularTOP2,Team=="Training"), labels = ~SubServiceitem, values = ~Workload, type = 'pie',
+             textposition = 'inside',
+             textinfo = 'label+percent',
+             insidetextfont = list(color = '#FFFFFF'),
+             hoverinfo = 'text',
+             text = ~paste('hr', Workload),
+             marker = list(colors = colors,
+                           line = list(color = '#FFFFFF', width = 1)),
+             #The 'pull' attribute can also be used to create space between the sectors
+             showlegend = FALSE) %>%
+        layout(title = TrainingTOP$ServiceItem,xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+               yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+```
+
+
+Rationale
+=====================================  
+
+Column
+-----------------------------------------------------------------------
+### Rationale checking: workload vs Standarized Workload Utilization
+
+```{r}
+GCOROLE<-Regular%>%group_by(Team,Name,Role)%>%
+        summarise(n=n())
+TeamworkE3=TeamworkE2%>%
+        mutate(sumWorkload=Ad.hoc+Planned+Platform.Dev.+Biz.Model+Consulting)%>%
+        dplyr::left_join(.,GCOROLE,by=c("Team","Name"))%>%
+        select(-n)%>%
+        group_by(Team,Name,Role)%>%
+        summarise(Totalworkload=sum(sumWorkload))
+TeamworkE3<-TeamworkE3%>%
+        group_by(Team,Role)%>%
+        summarise(workload=sum(Totalworkload),employee=n_distinct(Name))%>%
+        mutate(uti=workload/(employee*8*21.5*0.8))%>%
+        subset(Team!="SMS")
+TeamworkE3$Role[is.na(TeamworkE3$Role)]<-"NotLabeled"       
+
+p<-ggplot(TeamworkE3,aes(x=Team,y=uti,fill=Role))+
+        geom_bar(position="dodge",stat="identity",color="grey")+
+         labs(x=" ",y="Recorded Utilization (workload/0.8*Standarized Workload)",title="Recorded Utilization by team by role")+mytheme+
+        scale_fill_manual(values = cols_3)+
+        geom_text(aes(label=employee),size=3,color=NA)
+ggplotly(p)%>%layout(font=t)
+```
+
+### Rationale checking: Employee# by team by role
+```{r}
+p1<-ggplot(TeamworkE3,aes(x=Team,y=employee,fill=Role))+
+        geom_bar(position="dodge",stat="identity",color="grey")+
+         labs(x=" ",y="recorded employee#",title="Employee# by team by role")+mytheme+
+        scale_fill_manual(values = cols_3)+
+        geom_text(aes(label=employee),size=3,color=NA)
+ggplotly(p1)%>%layout(font=t)
+```
+
+Column {data-width=400}
+-----------------------------------------------------------------------
+### Rationale checking explanantion
+
+1. Monthly Standarized Workload=21.5(WorkDay) x 8(workingHr) x 80%
+Assumptions：Monthly Standarized Workload(working hour) based on 21.5 working day per month，8hr per working day. Assume 80% working time as regular and project work, other 20% as adminstrative & team work. 
+2. Utilization rate=recorded workload/monthly Standarized Workload
+
+
